@@ -1,0 +1,104 @@
+# vllm compose configuration.
+# Copy this file to .env (same folder) and edit. Per node you set MODEL (+ LoRA).
+# The path keys (MODELS_DIR/LORA_DIR) are FIXED — they point at the .temp view
+# isannd assembles from the store; do not edit them.
+
+# ---- Profile metadata (set by broker UI when applying a profile) ------------
+# 운영자가 broker UI 에서 프로파일을 적용하면 PROFILE_NAME / PROFILE_APPLIED_AT
+# 가 자동으로 갱신됨. 수동으로 .env 만 편집한 경우엔 "custom" 으로 둬도 됨.
+PROFILE_NAME=default
+PROFILE_APPLIED_AT=
+
+# ---- Image -------------------------------------------------------------------
+IMAGE_NAME=vllm/vllm-openai
+IMAGE_TAG=latest
+CONTAINER_NAME=vllm
+
+# ---- Network -----------------------------------------------------------------
+# Localhost-only debug port — compose binds it to 127.0.0.1, NOT exposed to the
+# network. Container internal port is fixed at 8080 (unified across engines;
+# the provider dials this host port to reach the engine).
+PORT=7864
+
+# Static IP on the `isann` docker network (10.10.1.0/24). Convention:
+#   10.10.1.11   sd
+#   10.10.1.12   vllm  (this one)
+#   10.10.1.13   llama
+#   10.10.1.101  provider
+#   10.10.1.111  broker
+#   10.10.1.201  rendezvous
+IP=10.10.1.12
+
+# vllm 의 multi-process attention kernels 는 shared memory 로 텐서 교환.
+# 기본 /dev/shm = 64m 이면 실 워크로드에서 segfault. 4g 면 대부분 LLM 커버.
+SHM_SIZE=4g
+
+# ---- Storage -----------------------------------------------------------------
+# FIXED path key — points at the .temp view isannd assembles (by hardlink) from
+# the canonical store (artifacts/addon/models/vllm/) on `docker prepare vllm` /
+# `docker start vllm -prepare`. Same on Windows+WSL / Linux / macOS.
+# Do NOT edit MODELS_DIR — set MODEL below.
+MODELS_DIR=./.temp/models/defaults
+
+# Model 디렉토리 (HuggingFace checkpoint format). in-view 이름 = store 폴더명
+# (체크포인트는 store/vllm/defaults/<MODEL>/ 에 있음). 예: qwen2.5-1.5b
+# 컨테이너 안에선 /models/<MODEL> 로 보임.
+MODEL=qwen2.5-1.5b
+
+# OpenAI API 가 노출할 모델 이름. 보통 MODEL 과 동일. 빈 값이면 MODEL 사용.
+SERVED_MODEL_NAME=
+
+# ---- vllm runtime knobs ------------------------------------------------------
+# Max context length. 모델 capability 초과하면 vllm 이 에러.
+MAX_MODEL_LEN=16384
+
+# GPU VRAM 점유 비율 (0.0 ~ 1.0). 0.75 = 75% 잡고 나머지는 다른 프로세스/모델용.
+GPU_MEMORY_UTILIZATION=0.75
+
+# 동시 처리 sequence 수 = 동시 추론 수. 작을수록 latency 안정 / 처리량 낮음.
+# provider 큐 worker 수는 이 값을 자동 추종 (manifest concurrency_env) — 동시 처리 수는 여기 한 곳만 조정.
+MAX_NUM_SEQS=1
+
+# ---- LoRA --------------------------------------------------------------------
+# LORA_DIR — FIXED view path, mounted at /loras. isannd assembles ALL of
+# store/vllm/loras/ here; vllm LoRAs are PEFT adapter DIRECTORIES, so each is
+# preserved as a folder /loras/<store-dir-name>/ (adapter_config.json + weights
+# travel together). The dir always exists (even empty). 활성 시 ENABLE_LORA="1"
+# + LORA_MODULES 필수.
+LORA_DIR=./.temp/models/loras
+
+# LORA_MODULES — 컨테이너 시점 vllm 에 등록할 LoRA 모듈 목록.
+# 포맷: "name=/loras/<store-dir-name>" (공백 구분, vllm --lora-modules 원형).
+# <store-dir-name> = store/vllm/loras/ 밑 폴더명 (view 에 폴더째 보존됨).
+# 클라이언트는 OpenAI API 의 model 필드를 위 name 으로 지정해서 호출.
+# 예: LORA_MODULES="myadapter=/loras/myadapter another=/loras/another-v2"
+LORA_MODULES=
+
+# 동시 로드 가능 LoRA 개수.
+MAX_LORAS=1
+
+# LoRA rank 상한 — 학습 시 사용한 r 값 이상.
+MAX_LORA_RANK=16
+
+# ---- Optional flags ----------------------------------------------------------
+# Quantization 사용 시: awq / gptq / squeezellm / fp8 / ...
+# 빈 값 = unquantized (모델 그대로).
+QUANTIZATION=
+
+# CUDA Graph 컴파일 skip — 부팅 빠르고 메모리 적게 쓰지만 추론 약간 느림.
+# 비활성: 빈 값. 활성: "1" 같은 truthy 값.
+ENFORCE_EAGER=
+
+# dtype 오버라이드. 예: bfloat16, float16, float32. 빈 값 = auto.
+DTYPE=
+
+# KV cache dtype. 예: fp8, fp8_e4m3, fp8_e5m2. 빈 값 = 모델 dtype 따라감.
+KV_CACHE_DTYPE=
+
+# Tensor parallelism — multi-GPU 사용 시 GPU 개수. 빈 값 또는 1 = single GPU.
+TENSOR_PARALLEL_SIZE=
+
+# ---- Catch-all ---------------------------------------------------------------
+# Any extra vllm flags, appended verbatim.
+# Example: EXTRA_VLLM_ARGS=--swap-space 4 --disable-log-stats
+EXTRA_VLLM_ARGS=
