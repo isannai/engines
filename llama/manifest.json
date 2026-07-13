@@ -1,0 +1,101 @@
+{
+  "spec_version": "1",
+  "name": "llama",
+  "display_name": "llama.cpp Server",
+  "version": "0.1.0",
+  "author": "isann",
+  "station": { "service_name": "llm-api", "queue": { "max_queue": 50, "concurrency": 1 } },
+  "service_type": "text",
+  "launcher": "docker",
+  "container": {
+    "image": "ghcr.io/isannai/llama:latest",
+    "port": 8080
+  },
+  "ready_check": {
+    "type": "http_get",
+    "url": "http://{addr}/v1/models",
+    "interval_ms": 3000,
+    "timeout_ms": 0,
+    "model_path": "data[0].id"
+  },
+  "parsers": [
+    {
+      "name": "model_loaded",
+      "stream": "stderr",
+      "type": "regex",
+      "pattern": "main: model loaded",
+      "emit": { "event": "model_loaded" }
+    },
+    {
+      "name": "server_listening",
+      "stream": "stderr",
+      "type": "regex",
+      "pattern": "server is listening on",
+      "emit": { "event": "model_loaded" }
+    },
+    {
+      "name": "error",
+      "stream": "stderr",
+      "type": "regex",
+      "pattern": "(?i)(failed to load model|out of memory|cuda error|llama_model_load_from_file_impl: failed)",
+      "emit": { "event": "error", "message": "$0" }
+    }
+  ],
+  "api": {
+    "proxy_routes": [
+      { "path": "/v1/chat/completions", "method": "POST" },
+      { "path": "/v1/completions", "method": "POST" },
+      { "path": "/v1/embeddings", "method": "POST" },
+      { "path": "/v1/models", "method": "GET" }
+    ],
+    "health_path": "/health",
+    "run": {
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "result": {
+        "modality": "text",
+        "content_path": "choices[0].message.content",
+        "stream_path": "choices[0].delta.content"
+      },
+      "params": [
+        { "name": "system",      "type": "string", "desc": "system prompt (optional)" },
+        { "name": "prompt",      "type": "string", "required": true, "desc": "user prompt" },
+        { "name": "max-tokens",  "type": "int",    "desc": "max output tokens" },
+        { "name": "temperature", "type": "float",  "desc": "sampling temperature 0-2" },
+        { "name": "top-p",       "type": "float",  "desc": "nucleus sampling cutoff" },
+        { "name": "seed",        "type": "int",    "desc": "deterministic seed" },
+        { "name": "stream",      "type": "bool",   "desc": "stream tokens (SSE)" }
+      ],
+      "body": {
+        "messages": [
+          { "role": "system", "content": "${system}" },
+          { "role": "user",   "content": "${prompt}" }
+        ],
+        "max_tokens":  "${max-tokens}",
+        "temperature": "${temperature}",
+        "top_p":       "${top-p}",
+        "seed":        "${seed}",
+        "stream":      "${stream}"
+      }
+    }
+  },
+  "metrics": {
+    "type": "iann-json",
+    "url": "http://{addr}/v1/queue/stats"
+  },
+  "queue": {
+    "enable": true,
+    "concurrency_env": "PARALLEL",
+    "default_max_queue": 50,
+    "default_max_done": 100,
+    "default_ttl_sec": 3600,
+    "default_save_to_disk": true
+  },
+  "inspect": {
+    "fields": [
+      { "key": "kv_type",       "label": "KV Cache",   "type": "string", "options": ["f16", "q8_0", "q5_1", "q5_0", "q4_1", "q4_0"] },
+      { "key": "ctx_size",      "label": "Ctx Size",   "type": "int" },
+      { "key": "gpu_layers",    "label": "GPU Layers", "type": "int" }
+    ]
+  }
+}
