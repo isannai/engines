@@ -1,0 +1,8 @@
+{
+  "type": "engines",
+  "version": "0.1.30",
+  "summary": "iSAMM Engine llama",
+  "files": [
+  ],
+  "metadata": { "author": "isann", "name": "llama" }
+}
