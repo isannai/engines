@@ -1,0 +1,14 @@
+{
+  "type": "engine",
+  "version": "0.1.30",
+  "summary": "iSANN Engine vllm (vLLM OpenAI server)",
+  "tags": "engine,vllm,text",
+  "entry": "manifest.json",
+  "files": [
+    { "path": ".env",                 "extract": false },
+    { "path": "docker-compose.yml",   "extract": false },
+    { "path": "manifest.json",        "extract": false },
+    { "path": "scripts/run.sh",       "extract": false }
+  ],
+  "metadata": { "author": "isann", "name": "vllm" }
+}

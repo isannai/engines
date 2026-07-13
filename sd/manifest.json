@@ -1,0 +1,167 @@
+{
+  "spec_version": "1",
+  "name": "sd",
+  "display_name": "Stable Diffusion (sd.cpp)",
+  "version": "0.1.0",
+  "author": "isann",
+  "station": { "service_name": "sd-api", "queue": { "max_queue": 5, "concurrency": 1 } },
+  "service_type": "image",
+  "launcher": "docker",
+  "container": {
+    "image": "ghcr.io/isannai/sd:latest",
+    "port": 8080
+  },
+  "ready_check": {
+    "type": "http_get",
+    "url": "http://{addr}/sdapi/v1/sd-models",
+    "interval_ms": 10000,
+    "timeout_ms": 1000,
+    "model_path": "[0].model_name"
+  },
+  "parsers": [
+    {
+      "name": "step_progress_stdout",
+      "stream": "stdout",
+      "type": "regex",
+      "pattern": "(\\d+)/(\\d+)\\s*-\\s*[\\d.]+(?:s/it|it/s)",
+      "emit": { "event": "progress", "current": "$1", "total": "$2" }
+    },
+    {
+      "name": "step_progress_stderr",
+      "stream": "stderr",
+      "type": "regex",
+      "pattern": "(\\d+)/(\\d+)\\s*-\\s*[\\d.]+(?:s/it|it/s)",
+      "emit": { "event": "progress", "current": "$1", "total": "$2" }
+    },
+    {
+      "name": "server_listening_stdout",
+      "stream": "stdout",
+      "type": "regex",
+      "pattern": "listening on: ",
+      "emit": { "event": "model_loaded" }
+    },
+    {
+      "name": "server_listening_stderr",
+      "stream": "stderr",
+      "type": "regex",
+      "pattern": "listening on: ",
+      "emit": { "event": "model_loaded" }
+    },
+    {
+      "name": "error_stdout",
+      "stream": "stdout",
+      "type": "regex",
+      "pattern": "(?i)(failed to load|out of memory|cuda error|new_sd_ctx_t failed|file .* not found)",
+      "emit": { "event": "error", "message": "$0" }
+    },
+    {
+      "name": "error_stderr",
+      "stream": "stderr",
+      "type": "regex",
+      "pattern": "(?i)(failed to load|out of memory|cuda error|new_sd_ctx_t failed|file .* not found)",
+      "emit": { "event": "error", "message": "$0" }
+    }
+  ],
+  "api": {
+    "proxy_routes": [
+      { "path": "/v1/images/generations", "method": "POST" },
+      { "path": "/v1/images/edits", "method": "POST",
+        "encoding": { "type": "multipart", "file_fields": ["image", "mask"] } }
+    ],
+    "health_path": "/health",
+    "run": {
+      "path": "/v1/images/generations",
+      "method": "POST",
+      "result": {
+        "modality": "image",
+        "content_path": "data[0].b64_json",
+        "encoding": "base64",
+        "ext": "png"
+      },
+      "params": [
+        { "name": "prompt",   "type": "string", "required": true, "desc": "positive prompt" },
+        { "name": "negative", "type": "string", "desc": "negative prompt" },
+        { "name": "steps",    "type": "int",    "default": 20,  "desc": "sampling steps" },
+        { "name": "cfg",      "type": "float",  "default": 7.0, "desc": "CFG scale" },
+        { "name": "sampler",  "type": "string", "desc": "sampling method (euler, dpm++2m, ...)" },
+        { "name": "size",     "type": "string", "default": "512x512", "desc": "image size WxH" },
+        { "name": "seed",     "type": "int",    "default": -1,  "desc": "seed (-1 = random)" },
+        { "name": "n",        "type": "int",    "default": 1,   "desc": "number of images" }
+      ],
+      "body": {
+        "prompt":          "${prompt}",
+        "negative_prompt": "${negative}",
+        "steps":           "${steps}",
+        "cfg_scale":       "${cfg}",
+        "sample_method":   "${sampler}",
+        "seed":            "${seed}",
+        "size":            "${size}",
+        "n":               "${n}"
+      },
+      "extra_args": {
+        "inject": "prompt",
+        "tag":    "sd_cpp_extra_args",
+        "fields": ["steps", "cfg_scale", "sample_method", "seed", "negative_prompt"]
+      }
+    },
+    "runs": [
+      {
+        "path": "/v1/images/edits",
+        "method": "POST",
+        "result": {
+          "modality": "image",
+          "content_path": "data[0].b64_json",
+          "encoding": "base64",
+          "ext": "png"
+        },
+        "params": [
+          { "name": "prompt",   "type": "string", "required": true, "desc": "edit prompt" },
+          { "name": "image",    "type": "file",   "required": true, "desc": "source image (base64 in run.image)" },
+          { "name": "mask",     "type": "file",   "desc": "inpaint mask (base64)" },
+          { "name": "strength", "type": "float",  "default": 0.75, "desc": "denoise strength (0..1, lower keeps more of the source)" },
+          { "name": "negative", "type": "string", "desc": "negative prompt" },
+          { "name": "steps",    "type": "int",    "default": 20,  "desc": "sampling steps" },
+          { "name": "cfg",      "type": "float",  "default": 7.0, "desc": "CFG scale" },
+          { "name": "sampler",  "type": "string", "desc": "sampling method (euler, dpm++2m, ...)" },
+          { "name": "size",     "type": "string", "default": "512x512", "desc": "output size WxH" },
+          { "name": "seed",     "type": "int",    "default": -1,  "desc": "seed (-1 = random)" }
+        ],
+        "body": {
+          "prompt":          "${prompt}",
+          "image":           "${image}",
+          "mask":            "${mask}",
+          "negative_prompt": "${negative}",
+          "strength":        "${strength}",
+          "steps":           "${steps}",
+          "cfg_scale":       "${cfg}",
+          "sample_method":   "${sampler}",
+          "seed":            "${seed}",
+          "size":            "${size}"
+        },
+        "extra_args": {
+          "inject": "prompt",
+          "tag":    "sd_cpp_extra_args",
+          "fields": ["steps", "cfg_scale", "sample_method", "seed", "negative_prompt"]
+        }
+      }
+    ]
+  },
+  "metrics": {
+    "type": "iann-json",
+    "url": "http://{addr}/v1/queue/stats"
+  },
+  "queue": {
+    "enable": true,
+    "default_max_queue": 5,
+    "default_max_done": 100,
+    "default_ttl_sec": 3600,
+    "default_save_to_disk": true
+  },
+  "inspect": {
+    "fields": [
+      { "key": "vae",           "label": "VAE",         "type": "string" },
+      { "key": "vae_on_cpu",    "label": "VAE on CPU",  "type": "string" },
+      { "key": "threads",       "label": "Threads",     "type": "int" }
+    ]
+  }
+}

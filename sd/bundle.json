@@ -1,0 +1,18 @@
+{
+  "type": "engine",
+  "version": "0.1.30",
+  "summary": "iSANN Engine sd (Stable Diffusion / sd.cpp)",
+  "tags": "engine,sd,stable-diffusion,image",
+  "entry": "manifest.json",
+  "files": [
+    { "path": ".env",                 "extract": false },
+    { "path": "Dockerfile",           "extract": false },
+    { "path": ".dockerignore",        "extract": false },
+    { "path": "docker-compose.yml",   "extract": false },
+    { "path": "manifest.json",        "extract": false },
+    { "path": "scripts/build.bat",    "extract": false },
+    { "path": "scripts/build.sh",     "extract": false },
+    { "path": "scripts/run.sh",       "extract": false }
+  ],
+  "metadata": { "author": "isann", "name": "sd" }
+}

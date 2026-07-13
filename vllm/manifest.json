@@ -1,0 +1,95 @@
+{
+  "spec_version": "1",
+  "name": "vllm",
+  "display_name": "vLLM",
+  "version": "0.1.0",
+  "author": "isann",
+  "station": { "service_name": "vllm-api", "queue": { "max_queue": 100, "concurrency": 1, "save_to_disk": false } },
+  "service_type": "text",
+  "launcher": "docker",
+  "description": "vLLM (OpenAI-compatible). isannd 가 docker 로 컨테이너 lifecycle 관리.",
+
+  "container": {
+    "image": "vllm/vllm-openai:latest",
+    "name": "vllm",
+    "port": 8080
+  },
+
+  "ready_check": {
+    "type": "http_get",
+    "url": "http://{addr}/v1/models",
+    "interval_ms": 3000,
+    "timeout_ms": 600000,
+    "model_path": "data[0].id",
+    "expected_status": 200,
+    "notes": "HTTP 200 with at least one model in .data[] → service ready."
+  },
+
+  "metrics": {
+    "type": "prometheus",
+    "url": "http://{addr}/metrics",
+    "mapping": {
+      "queue_depth": "vllm:num_requests_waiting",
+      "running_count": "vllm:num_requests_running",
+      "total_jobs_done": "vllm:request_success_total",
+      "latency_sum": "vllm:e2e_request_latency_seconds_sum",
+      "latency_count": "vllm:e2e_request_latency_seconds_count"
+    },
+    "avg_job_sec_formula": "latency_sum / latency_count"
+  },
+
+  "queue": {
+    "enable": true,
+    "concurrency_env": "MAX_NUM_SEQS",
+    "default_max_queue": 100,
+    "default_max_done": 100,
+    "default_ttl_sec": 0,
+    "default_save_to_disk": false
+  },
+
+  "api": {
+    "proxy_routes": [
+      { "path": "/v1/chat/completions", "method": "POST" },
+      { "path": "/v1/completions",      "method": "POST" },
+      { "path": "/v1/embeddings",       "method": "POST" },
+      { "path": "/v1/models",           "method": "GET"  }
+    ],
+    "run": {
+      "path": "/v1/chat/completions",
+      "method": "POST",
+      "result": {
+        "modality": "text",
+        "content_path": "choices[0].message.content",
+        "stream_path": "choices[0].delta.content"
+      },
+      "params": [
+        { "name": "system",      "type": "string", "desc": "system prompt (optional)" },
+        { "name": "prompt",      "type": "string", "required": true, "desc": "user prompt" },
+        { "name": "max-tokens",  "type": "int",    "desc": "max output tokens" },
+        { "name": "temperature", "type": "float",  "desc": "sampling temperature 0-2" },
+        { "name": "top-p",       "type": "float",  "desc": "nucleus sampling cutoff" },
+        { "name": "seed",        "type": "int",    "desc": "deterministic seed" },
+        { "name": "stream",      "type": "bool",   "desc": "stream tokens (SSE)" }
+      ],
+      "body": {
+        "messages": [
+          { "role": "system", "content": "${system}" },
+          { "role": "user",   "content": "${prompt}" }
+        ],
+        "max_tokens":  "${max-tokens}",
+        "temperature": "${temperature}",
+        "top_p":       "${top-p}",
+        "seed":        "${seed}",
+        "stream":      "${stream}"
+      }
+    }
+  },
+
+  "inspect": {
+    "fields": [
+      { "key": "model",                  "label": "Model",            "type": "string", "from": "api", "path": "data[0].root" },
+      { "key": "served_model_name",      "label": "Served Name",      "type": "string", "from": "api", "path": "data[0].id" },
+      { "key": "max_model_len",          "label": "Max Model Len",    "type": "int",    "from": "api", "path": "data[0].max_model_len" }
+    ]
+  }
+}

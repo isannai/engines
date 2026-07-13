@@ -1,0 +1,60 @@
+# Compose for isannai/sd (stock sd.cpp HTTP server).
+#
+# 운영 흐름 (모델 / 인자 변경):
+#
+#   docker compose -f docker-compose.yml --env-file .env stop sd
+#   vim .env                                  # MODEL, STEPS, CFG_SCALE 등 수정
+#   docker compose -f docker-compose.yml --env-file .env start sd
+#
+# rm 없이 stop/start 만으로 새 값 적용됩니다. 비결:
+#   - sd-server CLI 인자는 compose 시점에 박지 않고, 컨테이너의 entrypoint
+#     가 매 시작 시 bind-mount 된 .env 를 source 해서 만듦
+#   - 컨테이너 spec (image / ports / volumes) 자체를 바꾸려면 여전히
+#     compose up -d (재생성) 필요 — 이건 docker container 모델의 본질적 제약
+#
+# 컨테이너 안 vs compose 시점:
+#   - `${VAR}` (YAML 안)  → compose 가 .env 읽어서 치환. 호스트 측 인프라
+#                            (이미지, 포트, 마운트 경로 등). spec 에 박힘.
+#   - `$VAR` (command 안) → 컨테이너 안 shell 이 매 시작 시 평가. sd-server
+#                            인자. .env 만 수정하고 stop/start 만으로 적용.
+#
+# 공용 `isann` docker network 는 scripts/create-network.sh 로 한 번 만들고
+# external: true 로 참조.
+
+services:
+  sd:
+    image: ${IMAGE_NAME:-ghcr.io/isannai/sd}:${IMAGE_TAG:-latest}
+    container_name: ${CONTAINER_NAME:-sd}
+    # 자동 재시작 OFF — isann CLI 가 명시적으로 start/stop. WSL/dockerd 가
+    # 부팅돼도 컨테이너는 안 깨움 (GPU 메모리 reserve 방지).
+    restart: "no"
+    ports:
+      - "127.0.0.1:${PORT:-7860}:8080"
+    networks:
+      isann:
+        ipv4_address: ${IP:-10.10.1.11}
+    volumes:
+      # MODELS_DIR / VAE_DIR / LORA_DIR / OUTPUTS_DIR — 호스트 인프라 경로
+      # (mount 는 컨테이너 spec 의 일부라서 stop/start 만으로 변경 불가).
+      - "${MODELS_DIR:?MODELS_DIR is required (see .env)}:/models:ro"
+      - "${VAE_DIR:-${MODELS_DIR}}:/vae:ro"
+      - "${LORA_DIR:-${MODELS_DIR}}:/loras:ro"
+      - "${OUTPUTS_DIR:-./outputs}:/outputs"
+      # .env 와 run.sh 를 bind-mount — 컨테이너 시작 시마다 run.sh 가
+      # .env 를 source 해서 sd-server 인자를 만들어 exec.
+      # 운영자가 .env 의 MODEL 만 바꾸고 stop/start 하면 새 모델로 떠짐.
+      - "./.env:/conf/sd.env:ro"
+      - "./scripts/run.sh:/run.sh:ro"
+    entrypoint: ["/bin/sh", "/run.sh"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+networks:
+  isann:
+    external: true
+    name: isann
